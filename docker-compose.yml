@@ -5,8 +5,6 @@ services:
     container_name: docker-live-visualizer
     restart: unless-stopped
     network_mode: host
-    env_file:
-      - .env
     environment:
       - APP_PORT=${APP_PORT:-9100}
       - APP_TITLE=${APP_TITLE:-Docker Live Visualizer}
