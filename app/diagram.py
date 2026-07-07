@@ -51,17 +51,16 @@ def generate_mermaid(docker_data, network_data, filters=None):
     """
     if filters is None:
         filters = {}
-
-    exclude_networks = filters.get("exclude_networks", [])
+    exclude_networks = filters.get("exclude_networks") or []
     if isinstance(exclude_networks, str):
         exclude_networks = [n.strip() for n in exclude_networks.split(",") if n.strip()]
         
-    exclude_stopped = filters.get("exclude_stopped", False)
-    hide_internal_ports = filters.get("hide_internal_ports", False)
-    hide_loopback = filters.get("hide_loopback", True)
-    hide_veth = filters.get("hide_veth", True)
-    hide_bridge = filters.get("hide_bridge", True)
-    direction = filters.get("direction", "TD")
+    exclude_stopped = filters.get("exclude_stopped") is True
+    hide_internal_ports = filters.get("hide_internal_ports") is True
+    hide_loopback = filters.get("hide_loopback") is not False
+    hide_veth = filters.get("hide_veth") is not False
+    hide_bridge = filters.get("hide_bridge") is not False
+    direction = filters.get("direction") or "TD"
 
     if direction not in ["TD", "LR", "BT", "RL"]:
         direction = "TD"
