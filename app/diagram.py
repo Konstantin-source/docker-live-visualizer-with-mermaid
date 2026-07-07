@@ -153,7 +153,7 @@ def generate_mermaid(docker_data, network_data, filters=None):
                     "from": f"container_{c_name}",
                     "to": net_id,
                     "label": c_ip,
-                    "font": {"align": "middle", "size": 10, "color": "#94a3b8", "strokeWidth": 0},
+                    "font": {"align": "middle", "size": 10, "color": "#94a3b8", "strokeWidth": 0, "background": "#0b0f19"},
                     "color": {"color": "#334155", "highlight": "#06b6d4"}
                 })
 
@@ -275,7 +275,7 @@ def generate_mermaid(docker_data, network_data, filters=None):
                     "from": port_node_id,
                     "to": f"container_{c_name}",
                     "label": c_port,
-                    "font": {"align": "top", "size": 11, "color": "#cbd5e1", "strokeWidth": 0},
+                    "font": {"align": "top", "size": 11, "color": "#cbd5e1", "strokeWidth": 0, "background": "#0b0f19"},
                     "color": {"color": "#64748b", "highlight": "#6366f1"},
                     "arrows": {"to": {"enabled": True, "scaleFactor": 0.8}}
                 })

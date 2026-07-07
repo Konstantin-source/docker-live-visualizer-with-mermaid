@@ -347,10 +347,10 @@ function getNetworkOptions() {
     physics: {
       solver: 'forceAtlas2Based',
       forceAtlas2Based: {
-        gravitationalConstant: -120,
-        centralGravity: 0.015,
-        springLength: 140,
-        springConstant: 0.08,
+        gravitationalConstant: -260,
+        centralGravity: 0.01,
+        springLength: 200,
+        springConstant: 0.06,
         damping: 0.4,
         avoidOverlap: 1.0
       },
