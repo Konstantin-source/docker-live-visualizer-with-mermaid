@@ -71,7 +71,8 @@ def get_diagram(
         logger.exception("Error generating topology data")
         topology_data = {
             "nodes": [{"id": "error", "label": f"❌ Error generating diagram:\n{e}", "group": "stopped"}],
-            "edges": []
+            "edges": [],
+            "ports": []
         }
 
     # Extract all network names and interface names to let the frontend build filters

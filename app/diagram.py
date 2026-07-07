@@ -203,14 +203,16 @@ def generate_mermaid(docker_data, network_data, filters=None):
     mapped_ports = []
     for c in active_containers:
         c_name = c.get("name")
+        status = c.get("status", "unknown")
         for p in c.get("ports", []):
             host_port = p.get("host_port")
             if host_port:
                 mapped_ports.append({
-                    "host_port": host_port,
+                    "host_port": int(host_port),
                     "host_ip": p.get("host_ip", "0.0.0.0"),
                     "container_port": p.get("container_port"),
-                    "container_name": c_name
+                    "container_name": c_name,
+                    "container_status": status
                 })
 
     # Group mapped ports by port number
@@ -282,5 +284,6 @@ def generate_mermaid(docker_data, network_data, filters=None):
 
     return {
         "nodes": nodes,
-        "edges": edges
+        "edges": edges,
+        "ports": sorted(mapped_ports, key=lambda x: x["host_port"])
     }

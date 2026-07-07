@@ -13,7 +13,8 @@ const state = {
   excludeNetworks: new Set(),
   appTitle: 'Docker Live Visualizer',
   isFirstLoad: true,
-  refreshTimer: null
+  refreshTimer: null,
+  portsList: []
 };
 
 // Global Vis.js DataSet & Network Instances
@@ -50,7 +51,10 @@ const elements = {
   // Modals
   apiKeyModal: document.getElementById('api-key-modal'),
   apiKeyInput: document.getElementById('api-key-input'),
-  saveApiKey: document.getElementById('save-api-key')
+  saveApiKey: document.getElementById('save-api-key'),
+  portsModal: document.getElementById('ports-modal'),
+  portOverviewBtn: document.getElementById('port-overview-btn'),
+  portsTableBody: document.getElementById('ports-table-body')
 };
 
 // Initialize App
@@ -164,6 +168,11 @@ function setupEventListeners() {
 
   // Modals management
   elements.exportPngBtn.addEventListener('click', exportPNG);
+
+  elements.portOverviewBtn.addEventListener('click', () => {
+    renderPortsTable(state.portsList);
+    openModal(elements.portsModal);
+  });
 
   elements.apiKeyBtn.addEventListener('click', () => {
     elements.apiKeyInput.value = state.apiKey;
@@ -449,6 +458,10 @@ async function fetchData(manual = false) {
       showStatus(true, 'Live Connected');
     }
 
+    // Update ports list cache
+    state.portsList = data.topology.ports || [];
+    renderPortsTable(state.portsList);
+
     // Update Networks Checklist
     updateNetworksChecklist(data.networks || []);
     
@@ -558,6 +571,46 @@ function updateNetworksChecklist(networks) {
     label.appendChild(input);
     label.appendChild(document.createTextNode(net));
     elements.networksList.appendChild(label);
+  });
+}
+
+// Render dynamic rows in ports table
+function renderPortsTable(ports) {
+  const tbody = elements.portsTableBody;
+  if (!tbody) return;
+  
+  tbody.innerHTML = '';
+  if (ports.length === 0) {
+    tbody.innerHTML = `
+      <tr>
+        <td colspan="5" style="text-align: center;" class="text-muted">Keine belegten Host-Ports gefunden.</td>
+      </tr>
+    `;
+    return;
+  }
+
+  ports.forEach(p => {
+    const tr = document.createElement('tr');
+    
+    // Determine status styling
+    let statusClass = 'stopped';
+    let statusEmoji = '🔴';
+    if (p.container_status === 'running') {
+      statusClass = 'running';
+      statusEmoji = '🟢';
+    } else if (p.container_status === 'paused') {
+      statusClass = 'paused';
+      statusEmoji = '🟡';
+    }
+    
+    tr.innerHTML = `
+      <td><span class="port-badge">:${p.host_port}</span></td>
+      <td><span class="text-muted" style="font-family: monospace;">${p.host_ip}</span></td>
+      <td style="color: var(--text-primary); font-weight: 500;">📦 ${p.container_name}</td>
+      <td><span class="text-muted" style="font-family: monospace;">${p.container_port}</span></td>
+      <td><span class="status-badge ${statusClass}">${statusEmoji} ${p.container_status}</span></td>
+    `;
+    tbody.appendChild(tr);
   });
 }
 
