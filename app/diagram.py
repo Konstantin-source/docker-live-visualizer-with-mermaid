@@ -46,8 +46,10 @@ def get_iface_emoji(iface_type):
         return "🔌"
 
 def classify_container(name, image, status):
-    if status != "running":
-        return status
+    if status == "paused":
+        return "paused"
+    elif status != "running":
+        return "stopped"
         
     n_lower = name.lower()
     i_lower = image.lower()
