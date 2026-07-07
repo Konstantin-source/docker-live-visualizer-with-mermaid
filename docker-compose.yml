@@ -1,7 +1,6 @@
 services:
   visualizer:
     build: .
-    image: docker-live-visualizer:latest
     container_name: docker-live-visualizer
     restart: unless-stopped
     network_mode: host
