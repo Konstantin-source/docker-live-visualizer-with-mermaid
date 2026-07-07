@@ -277,7 +277,7 @@ def generate_mermaid(docker_data, network_data, filters=None):
                     "label": c_port,
                     "font": {"align": "top", "size": 11, "color": "#cbd5e1", "strokeWidth": 0},
                     "color": {"color": "#64748b", "highlight": "#6366f1"},
-                    "arrows": {"to": {"enabled": true, "scaleFactor": 0.8}}
+                    "arrows": {"to": {"enabled": True, "scaleFactor": 0.8}}
                 })
 
     return {
