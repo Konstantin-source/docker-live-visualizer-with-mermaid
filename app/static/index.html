@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Docker Live Visualizer</title>
+  <link rel="stylesheet" href="style.css">
+  <!-- Load Mermaid ESM module later dynamically in app.js -->
+</head>
+<body>
+
+  <!-- Header -->
+  <header>
+    <div class="brand">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+      </svg>
+      <h1 id="app-title">Docker Live Visualizer</h1>
+    </div>
+    
+    <div class="header-actions">
+      <button id="menu-btn" class="menu-toggle" aria-label="Toggle Menu">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="3" y1="12" x2="21" y2="12"></line>
+          <line x1="3" y1="6" x2="21" y2="6"></line>
+          <line x1="3" y1="18" x2="21" y2="18"></line>
+        </svg>
+      </button>
+      <div class="status-indicator">
+        <span id="status-dot" class="status-dot"></span>
+        <span id="status-text">Checking...</span>
+      </div>
+    </div>
+  </header>
+
+  <div class="app-container">
+    <!-- Sidebar -->
+    <aside id="sidebar">
+      <div class="sidebar-content">
+        <!-- Live Settings -->
+        <div class="sidebar-section">
+          <h3>Live Updates</h3>
+          <div class="control-group">
+            <div class="control-row">
+              <label for="auto-refresh">Auto-Refresh</label>
+              <label class="switch">
+                <input type="checkbox" id="auto-refresh" checked>
+                <span class="slider-switch"></span>
+              </label>
+            </div>
+            <div class="slider-container" id="refresh-interval-container">
+              <div class="control-row">
+                <label for="refresh-interval">Interval</label>
+                <span id="interval-val" class="font-mono">5s</span>
+              </div>
+              <input type="range" id="refresh-interval" min="5" max="60" step="5" value="5">
+              <div class="slider-labels">
+                <span>5s</span>
+                <span>30s</span>
+                <span>60s</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Display Layout -->
+        <div class="sidebar-section">
+          <h3>Layout</h3>
+          <div class="control-group">
+            <div class="control-row">
+              <label for="layout-direction">Direction</label>
+              <select id="layout-direction">
+                <option value="TD" selected>Top-Down (TD)</option>
+                <option value="LR">Left-Right (LR)</option>
+                <option value="BT">Bottom-Top (BT)</option>
+                <option value="RL">Right-Left (RL)</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <!-- General Filters -->
+        <div class="sidebar-section">
+          <h3>General Filters</h3>
+          <div class="control-group">
+            <div class="control-row">
+              <label for="filter-stopped">Hide Stopped Containers</label>
+              <label class="switch">
+                <input type="checkbox" id="filter-stopped">
+                <span class="slider-switch"></span>
+              </label>
+            </div>
+            <div class="control-row">
+              <label for="filter-internal">Hide Unmapped Ports</label>
+              <label class="switch">
+                <input type="checkbox" id="filter-internal">
+                <span class="slider-switch"></span>
+              </label>
+            </div>
+            <div class="control-row">
+              <label for="filter-loopback">Hide Loopback (lo)</label>
+              <label class="switch">
+                <input type="checkbox" id="filter-loopback" checked>
+                <span class="slider-switch"></span>
+              </label>
+            </div>
+            <div class="control-row">
+              <label for="filter-veth">Hide veth Interfaces</label>
+              <label class="switch">
+                <input type="checkbox" id="filter-veth" checked>
+                <span class="slider-switch"></span>
+              </label>
+            </div>
+            <div class="control-row">
+              <label for="filter-bridge">Hide Docker Bridges</label>
+              <label class="switch">
+                <input type="checkbox" id="filter-bridge" checked>
+                <span class="slider-switch"></span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <!-- Network Exclusions -->
+        <div class="sidebar-section">
+          <h3>Exclude Networks</h3>
+          <div class="control-group">
+            <div id="networks-list" class="checkbox-list">
+              <span class="text-muted">Loading networks...</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sidebar Buttons -->
+      <div class="sidebar-footer">
+        <button id="refresh-btn" class="btn btn-primary">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/>
+          </svg>
+          Refresh Now
+        </button>
+        <button id="view-code-btn" class="btn btn-secondary">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="16 18 22 12 16 6"></polyline>
+            <polyline points="8 6 2 12 8 18"></polyline>
+          </svg>
+          View Mermaid Code
+        </button>
+        <button id="api-key-btn" class="btn btn-secondary">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+          </svg>
+          Set API Key
+        </button>
+      </div>
+    </aside>
+
+    <!-- Main Visualizer Panel -->
+    <main>
+      <!-- Viewport Controls -->
+      <div class="viewport-controls">
+        <button id="zoom-in" class="btn-circle" title="Zoom In">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+        </button>
+        <button id="zoom-out" class="btn-circle" title="Zoom Out">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+        </button>
+        <button id="zoom-reset" class="btn-circle" title="Reset Zoom">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"></path>
+          </svg>
+        </button>
+      </div>
+
+      <!-- Main Canvas for Diagram -->
+      <div id="diagram-container">
+        <div id="diagram-wrapper">
+          <!-- Rendered SVG will go here -->
+          <div style="text-align: center; color: var(--text-secondary);">
+            <p>Initializing visualizer...</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Loading overlay -->
+      <div id="loading" class="loading-overlay">
+        <div class="spinner"></div>
+      </div>
+    </main>
+  </div>
+
+  <!-- Code Modal -->
+  <div id="code-modal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Mermaid.js Flowchart Source</h2>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="text-secondary" style="font-size: 0.875rem; margin-bottom: 0.5rem;">Copy this string into any Mermaid reader (e.g. mermaid.live) to render outside this app.</p>
+        <textarea id="code-output" readonly></textarea>
+        <button id="copy-code-btn" class="btn btn-primary" style="margin-top: 0.5rem;">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+          </svg>
+          Copy to Clipboard
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- API Key Modal -->
+  <div id="api-key-modal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Enter API Key</h2>
+        <button class="modal-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p class="text-secondary" style="font-size: 0.875rem;">If the server is configured with API_KEY, enter it here to authorize data requests.</p>
+        <input type="password" id="api-key-input" class="form-input" placeholder="Enter API Key/Token">
+        <button id="save-api-key" class="btn btn-primary">Save Key</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- App Main Scripts -->
+  <script type="module" src="app.js"></script>
+</body>
+</html>

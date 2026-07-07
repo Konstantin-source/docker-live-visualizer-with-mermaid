@@ -1,0 +1,26 @@
+services:
+  visualizer:
+    build: .
+    image: docker-live-visualizer:latest
+    container_name: docker-live-visualizer
+    restart: unless-stopped
+    network_mode: host
+    env_file:
+      - .env
+    environment:
+      - APP_PORT=${APP_PORT:-9100}
+      - APP_TITLE=${APP_TITLE:-Docker Live Visualizer}
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      - API_KEY=${API_KEY:-}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:${APP_PORT:-9100}/api/health')\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
