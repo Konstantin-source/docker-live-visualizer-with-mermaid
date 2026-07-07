@@ -93,20 +93,20 @@ def generate_mermaid(docker_data, network_data, filters=None):
     lines.append(f"flowchart {direction}")
     lines.append("")
 
-    # Class Definitions for styling with subtle container fills
-    lines.append("    classDef running fill:rgba(16, 185, 129, 0.05),stroke:#10b981,stroke-width:2px,color:#f8fafc;")
-    lines.append("    classDef stopped fill:rgba(239, 68, 68, 0.05),stroke:#ef4444,stroke-width:2px,color:#94a3b8;")
-    lines.append("    classDef paused fill:rgba(245, 158, 11, 0.05),stroke:#f59e0b,stroke-width:2px,color:#f8fafc;")
+    # Class Definitions for styling with subtle container fills (using hex alpha to avoid comma-split parser errors)
+    lines.append("    classDef running fill:#10b9810d,stroke:#10b981,stroke-width:2px,color:#f8fafc;")
+    lines.append("    classDef stopped fill:#ef44440d,stroke:#ef4444,stroke-width:2px,color:#94a3b8;")
+    lines.append("    classDef paused fill:#f59e0b0d,stroke:#f59e0b,stroke-width:2px,color:#f8fafc;")
     lines.append("    classDef physical fill:#0f172a,stroke:#3b82f6,stroke-width:2px,color:#f8fafc;")
     lines.append("    classDef vpn fill:#0f172a,stroke:#8b5cf6,stroke-width:2px,color:#f8fafc;")
     lines.append("    classDef hostport fill:#1e293b,stroke:#e2e8f0,stroke-dasharray: 5 5,stroke-width:2px,color:#f8fafc;")
     lines.append("    classDef nethub fill:#111827,stroke:#06b6d4,stroke-width:2px,color:#f8fafc;")
     
-    # Subtle pastel category fills for running containers
-    lines.append("    classDef db fill:rgba(168, 85, 247, 0.06),stroke:#a855f7,stroke-width:2px,color:#f8fafc;")
-    lines.append("    classDef web fill:rgba(14, 165, 233, 0.06),stroke:#0ea5e9,stroke-width:2px,color:#f8fafc;")
-    lines.append("    classDef tool fill:rgba(234, 179, 8, 0.06),stroke:#eab308,stroke-width:2px,color:#f8fafc;")
-    lines.append("    classDef app fill:rgba(236, 72, 153, 0.06),stroke:#ec4899,stroke-width:2px,color:#f8fafc;")
+    # Subtle pastel category fills for running containers (using hex alpha)
+    lines.append("    classDef db fill:#a855f70f,stroke:#a855f7,stroke-width:2px,color:#f8fafc;")
+    lines.append("    classDef web fill:#0ea5e90f,stroke:#0ea5e9,stroke-width:2px,color:#f8fafc;")
+    lines.append("    classDef tool fill:#eab3080f,stroke:#eab308,stroke-width:2px,color:#f8fafc;")
+    lines.append("    classDef app fill:#ec48990f,stroke:#ec4899,stroke-width:2px,color:#f8fafc;")
     lines.append("")
 
     # Track defined container nodes to prevent double definition
