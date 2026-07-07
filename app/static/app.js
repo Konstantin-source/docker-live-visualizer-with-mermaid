@@ -240,7 +240,8 @@ function closeModal(modal) {
 
 // Zoom functionality
 function zoom(delta) {
-  state.zoom = Math.max(0.2, Math.min(3.0, state.zoom + delta));
+  // Allow zooming from 0.1x to 10.0x for detailed views
+  state.zoom = Math.max(0.1, Math.min(10.0, state.zoom + delta));
   applyViewportTransform();
 }
 
@@ -287,12 +288,20 @@ function setupDragAndPan() {
     }
   });
 
-  // Mouse wheel zoom
+  // Smart wheel handling: touchpad pinch-to-zoom vs scroll panning
   container.addEventListener('wheel', (e) => {
     e.preventDefault();
-    const zoomFactor = 0.05;
-    const delta = e.deltaY < 0 ? zoomFactor : -zoomFactor;
-    zoom(delta);
+    if (e.ctrlKey) {
+      // Touchpad pinch-to-zoom or Ctrl + Scroll wheel
+      // Negative deltaY is zoom-in, positive is zoom-out
+      const zoomFactor = -e.deltaY * 0.015;
+      zoom(zoomFactor);
+    } else {
+      // Touchpad two-finger scroll or normal mouse wheel scroll (pans viewport)
+      state.panX -= e.deltaX * 1.0;
+      state.panY -= e.deltaY * 1.0;
+      applyViewportTransform();
+    }
   }, { passive: false });
 }
 
