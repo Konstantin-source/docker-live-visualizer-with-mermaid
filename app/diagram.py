@@ -3,48 +3,6 @@ import logging
 
 logger = logging.getLogger("docker-visualizer.diagram")
 
-def sanitize_id(name):
-    """
-    Sanitizes a string to be a safe Mermaid node ID.
-    """
-    # Replace non-alphanumeric characters with underscores
-    sanitized = re.sub(r'[^a-zA-Z0-9_]', '_', name)
-    # Avoid starting with a number (Mermaid IDs should start with a letter/underscore)
-    if sanitized and sanitized[0].isdigit():
-        sanitized = f"node_{sanitized}"
-    # Reserved words in Mermaid
-    reserved = {"end", "graph", "flowchart", "subgraph", "direction", "classdef", "class", "style"}
-    if sanitized.lower() in reserved:
-        sanitized = f"node_{sanitized}"
-    return sanitized
-
-def get_status_emoji(status):
-    status = status.lower()
-    if status == "running":
-        return "🟢"
-    elif status == "paused":
-        return "🟡"
-    elif status == "exited":
-        return "🔴"
-    elif status == "created":
-        return "🆕"
-    else:
-        return "⚪"
-
-def get_iface_emoji(iface_type):
-    if iface_type == "wireguard":
-        return "🔒"
-    elif iface_type == "tailscale":
-        return "🛡️"
-    elif iface_type == "physical":
-        return "🌐"
-    elif iface_type == "loopback":
-        return "🔄"
-    elif iface_type == "docker-bridge":
-        return "🐳"
-    else:
-        return "🔌"
-
 def classify_container(name, image, status):
     if status == "paused":
         return "paused"
@@ -69,12 +27,27 @@ def classify_container(name, image, status):
     else:
         return "running"
 
+def get_status_emoji(status):
+    status = status.lower()
+    if status == "running":
+        return "🟢"
+    elif status == "paused":
+        return "🟡"
+    elif status == "exited":
+        return "🔴"
+    elif status == "created":
+        return "🆕"
+    else:
+        return "⚪"
+
 def generate_mermaid(docker_data, network_data, filters=None):
     """
-    Generates a valid Mermaid.js flowchart string from Docker and network data.
+    NOTE: We keep the function name 'generate_mermaid' to avoid changing imports in main.py, 
+    but it now returns a JSON-compatible dictionary containing nodes and edges for Vis.js!
     """
     if filters is None:
         filters = {}
+
     exclude_networks = filters.get("exclude_networks") or []
     if isinstance(exclude_networks, str):
         exclude_networks = [n.strip() for n in exclude_networks.split(",") if n.strip()]
@@ -84,51 +57,115 @@ def generate_mermaid(docker_data, network_data, filters=None):
     hide_loopback = filters.get("hide_loopback") is not False
     hide_veth = filters.get("hide_veth") is not False
     hide_bridge = filters.get("hide_bridge") is not False
-    direction = filters.get("direction") or "TD"
 
-    if direction not in ["TD", "LR", "BT", "RL"]:
-        direction = "TD"
-
-    lines = []
-    lines.append(f"flowchart {direction}")
-    lines.append("")
-
-    # Class Definitions for styling with subtle container fills (using hex alpha to avoid comma-split parser errors)
-    lines.append("    classDef running fill:#10b9810d,stroke:#10b981,stroke-width:2px,color:#f8fafc;")
-    lines.append("    classDef stopped fill:#ef44440d,stroke:#ef4444,stroke-width:2px,color:#94a3b8;")
-    lines.append("    classDef paused fill:#f59e0b0d,stroke:#f59e0b,stroke-width:2px,color:#f8fafc;")
-    lines.append("    classDef physical fill:#0f172a,stroke:#3b82f6,stroke-width:2px,color:#f8fafc;")
-    lines.append("    classDef vpn fill:#0f172a,stroke:#8b5cf6,stroke-width:2px,color:#f8fafc;")
-    lines.append("    classDef hostport fill:#1e293b,stroke:#e2e8f0,stroke-dasharray: 5 5,stroke-width:2px,color:#f8fafc;")
-    lines.append("    classDef nethub fill:#111827,stroke:#06b6d4,stroke-width:2px,color:#f8fafc;")
+    nodes = []
+    edges = []
     
-    # Subtle pastel category fills for running containers (using hex alpha)
-    lines.append("    classDef db fill:#a855f70f,stroke:#a855f7,stroke-width:2px,color:#f8fafc;")
-    lines.append("    classDef web fill:#0ea5e90f,stroke:#0ea5e9,stroke-width:2px,color:#f8fafc;")
-    lines.append("    classDef tool fill:#eab3080f,stroke:#eab308,stroke-width:2px,color:#f8fafc;")
-    lines.append("    classDef app fill:#ec48990f,stroke:#ec4899,stroke-width:2px,color:#f8fafc;")
-    lines.append("")
-
-    # Track defined container nodes to prevent double definition
-    # container_id -> node_id
-    defined_containers = {}
+    # Keep track of active/defined container names to link edges correctly
+    defined_containers = set()
     
-    # Filter and collect containers
+    # 1. Gather Container Nodes
     active_containers = []
     for c in docker_data.get("containers", []):
-        if exclude_stopped and c.get("status") != "running":
+        c_name = c.get("name")
+        status = c.get("status", "unknown")
+        
+        if exclude_stopped and status != "running":
             continue
+            
         active_containers.append(c)
+        defined_containers.add(c_name)
+        
+        # Build detailed hover HTML tooltip
+        ports_str = ""
+        for p in c.get("ports", []):
+            h_port = p.get("host_port")
+            c_port = p.get("container_port")
+            if h_port:
+                ports_str += f"<br>• Host Port :{h_port} ➔ Container {c_port}"
+            elif c_port:
+                ports_str += f"<br>• Exposed Container Port {c_port}"
+        if not ports_str:
+            ports_str = "None"
 
-    # 1. Host/Edge Subgraph
-    lines.append("    subgraph HOST[\"🖥️ Host / Edge\"]")
-    lines.append("        direction TB")
+        tooltip = f"""
+        <div style="font-family: sans-serif; padding: 4px;">
+            <b style="font-size:14px; color:#f8fafc;">📦 {c_name}</b><br>
+            <hr style="border:0; border-top:1px solid #374151; margin:4px 0;">
+            <b>Status:</b> {get_status_emoji(status)} {status}<br>
+            <b>Image:</b> {c.get('image', 'unknown')}<br>
+            <b>Networks:</b> {', '.join(c.get('networks', [])) or 'none'}<br>
+            <b>Mapped Ports:</b> {ports_str}
+        </div>
+        """
+        
+        group = classify_container(c_name, c.get("image", ""), status)
+        
+        nodes.append({
+            "id": f"container_{c_name}",
+            "label": f"📦 {c_name}\n{get_status_emoji(status)} {status}",
+            "title": tooltip,
+            "group": group
+        })
+
+    # 2. Gather Docker Network Hub Nodes
+    active_networks = []
+    network_hub_ids = {}
     
-    # Filter interfaces
+    for net in docker_data.get("networks", []):
+        net_name = net.get("name")
+        driver = net.get("driver", "unknown")
+        subnets = net.get("subnets", [])
+        
+        if net_name in exclude_networks:
+            continue
+            
+        active_networks.append(net)
+        net_id = f"net_{net_name}"
+        network_hub_ids[net_name] = net_id
+        
+        subnets_str = ", ".join(subnets) if subnets else "No Subnet"
+        
+        tooltip = f"""
+        <div style="font-family: sans-serif; padding: 4px;">
+            <b style="font-size:14px; color:#06b6d4;">🐳 Network: {net_name}</b><br>
+            <hr style="border:0; border-top:1px solid #374151; margin:4px 0;">
+            <b>Driver:</b> {driver}<br>
+            <b>Subnet/Gateway:</b> {subnets_str}
+        </div>
+        """
+        
+        nodes.append({
+            "id": net_id,
+            "label": f"🌐 {net_name}\n({driver})",
+            "title": tooltip,
+            "group": "network"
+        })
+        
+        # Connect containers to this network
+        # Find containers listed as connected inside network attributes
+        for conn_c in net.get("containers", []):
+            c_name = conn_c.get("name")
+            c_ip = conn_c.get("ipv4", "")
+            
+            if c_name in defined_containers:
+                edges.append({
+                    "from": f"container_{c_name}",
+                    "to": net_id,
+                    "label": c_ip,
+                    "font": {"align": "middle", "size": 10, "color": "#94a3b8", "strokeWidth": 0},
+                    "color": {"color": "#334155", "highlight": "#06b6d4"}
+                })
+
+    # 3. Gather Host Interface Nodes
     active_interfaces = []
+    iface_nodes = {}
+    
     for iface in network_data.get("interfaces", []):
+        name = iface.get("name")
         iface_type = iface.get("type")
-        iface_name = iface.get("name")
+        state = iface.get("state")
+        addrs = iface.get("addresses", [])
         
         if hide_loopback and iface_type == "loopback":
             continue
@@ -138,33 +175,34 @@ def generate_mermaid(docker_data, network_data, filters=None):
             continue
             
         active_interfaces.append(iface)
-
-    # Write interfaces to Host subgraph
-    iface_nodes = {}
-    for iface in active_interfaces:
-        name = iface.get("name")
-        iface_type = iface.get("type")
-        state = iface.get("state")
-        addrs = iface.get("addresses", [])
-        
-        node_id = sanitize_id(f"iface_{name}")
+        node_id = f"iface_{name}"
         iface_nodes[name] = node_id
         
-        emoji = get_iface_emoji(iface_type)
-        addrs_str = "<br/>".join(addrs) if addrs else "No IP"
+        ips_str = "<br>".join([f"• {a}" for a in addrs]) if addrs else "No IP"
+        tooltip = f"""
+        <div style="font-family: sans-serif; padding: 4px;">
+            <b style="font-size:14px; color:#3b82f6;">🌐 Interface: {name}</b><br>
+            <hr style="border:0; border-top:1px solid #374151; margin:4px 0;">
+            <b>Type:</b> {iface_type}<br>
+            <b>State:</b> {state}<br>
+            <b>IP Addresses:</b><br>{ips_str}
+        </div>
+        """
         
-        lines.append(f"        {node_id}[\"{emoji} {name}<br/>{addrs_str} ({state})\"]")
+        group = "vpn" if iface_type in ["wireguard", "tailscale"] else "physical"
         
-        # Apply styling class
-        if iface_type in ["wireguard", "tailscale"]:
-            lines.append(f"        class {node_id} vpn;")
-        else:
-            lines.append(f"        class {node_id} physical;")
-            
+        nodes.append({
+            "id": node_id,
+            "label": f"🌐 {name}\n({state})",
+            "title": tooltip,
+            "group": group
+        })
+
+    # 4. Gather Host Port Nodes
     # Collect mapped host ports
     mapped_ports = []
     for c in active_containers:
-        c_node_id = sanitize_id(f"container_{c.get('name')}")
+        c_name = c.get("name")
         for p in c.get("ports", []):
             host_port = p.get("host_port")
             if host_port:
@@ -172,11 +210,10 @@ def generate_mermaid(docker_data, network_data, filters=None):
                     "host_port": host_port,
                     "host_ip": p.get("host_ip", "0.0.0.0"),
                     "container_port": p.get("container_port"),
-                    "container_node_id": c_node_id,
-                    "container_name": c.get("name")
+                    "container_name": c_name
                 })
 
-    # Deduplicate host ports by port number
+    # Group mapped ports by port number
     unique_host_ports = {}
     for p in mapped_ports:
         port = p["host_port"]
@@ -184,170 +221,66 @@ def generate_mermaid(docker_data, network_data, filters=None):
             unique_host_ports[port] = []
         unique_host_ports[port].append(p)
 
-    # Write port nodes to Host subgraph
-    port_nodes = {}
+    # Write port nodes and connect to interfaces
     for port, bindings in unique_host_ports.items():
-        port_node_id = sanitize_id(f"port_{port}")
-        port_nodes[port] = port_node_id
-        
-        # Display all bindings if multiple
+        port_node_id = f"port_{port}"
         ips = list(set([b["host_ip"] for b in bindings]))
         ips_str = ", ".join(ips)
         
-        lines.append(f"        {port_node_id}[\"🔌 Port :{port}<br/>({ips_str})\"]")
-        lines.append(f"        class {port_node_id} hostport;")
+        tooltip = f"""
+        <div style="font-family: sans-serif; padding: 4px;">
+            <b style="font-size:14px; color:#e2e8f0;">🔌 Host Port: {port}</b><br>
+            <hr style="border:0; border-top:1px solid #374151; margin:4px 0;">
+            <b>IP Binding:</b> {ips_str}
+        </div>
+        """
+        
+        nodes.append({
+            "id": port_node_id,
+            "label": f"🔌 :{port}",
+            "title": tooltip,
+            "group": "hostport"
+        })
         
         # Connect host interfaces to this port if exposed
         for iface in active_interfaces:
             iface_name = iface.get("name")
             iface_node_id = iface_nodes.get(iface_name)
             
-            # Simple heuristic: if bound to 0.0.0.0 or [::], connect to all physical/vpn interfaces
-            # If bound to a specific IP, connect only if interface has that IP
             is_exposed_on_iface = False
             for ip_binding in ips:
                 if ip_binding in ["0.0.0.0", "::", "[::]"]:
                     is_exposed_on_iface = True
                 else:
-                    # Check if interface addresses contain this IP
                     for addr in iface.get("addresses", []):
                         if ip_binding in addr:
                             is_exposed_on_iface = True
-            
+                            
             if is_exposed_on_iface and iface_node_id:
-                lines.append(f"        {iface_node_id} -.-> {port_node_id}")
-
-    lines.append("    end")
-    lines.append("")
-
-    # 2. Docker Networks Subgraphs
-    # Track which networks are empty or excluded
-    active_networks = []
-    for net in docker_data.get("networks", []):
-        net_name = net.get("name")
-        if net_name in exclude_networks:
-            continue
-        active_networks.append(net)
-
-    # Create network subgraphs
-    network_hub_nodes = {}
-    for net in active_networks:
-        net_name = net.get("name")
-        driver = net.get("driver", "unknown")
-        subnets = net.get("subnets", [])
-        net_node_id = sanitize_id(f"net_{net_name}")
-        
-        lines.append(f"    subgraph SUB_{net_node_id}[\"🐳 Network: {net_name} ({driver})\"]")
-        lines.append("        direction TB")
-        
-        # Create a hub/gateway node for the network
-        hub_id = f"hub_{net_node_id}"
-        network_hub_nodes[net_name] = hub_id
-        subnets_str = ", ".join(subnets) if subnets else "No Subnet"
-        
-        lines.append(f"        {hub_id}(\"🌐 {net_name}<br/>{subnets_str}\")")
-        lines.append(f"        class {hub_id} nethub;")
-        
-        # Add containers that belong to this network and aren't defined yet
-        # A container is "owned" by the first network subgraph it is listed in
-        for c in active_containers:
-            if net_name in c.get("networks", []):
-                c_name = c.get("name")
-                c_node_id = sanitize_id(f"container_{c_name}")
+                edges.append({
+                    "from": iface_node_id,
+                    "to": port_node_id,
+                    "dashes": True,
+                    "color": {"color": "#475569", "highlight": "#3b82f6"},
+                    "arrows": {"to": {"enabled": False}}
+                })
                 
-                if c_name not in defined_containers:
-                    status = c.get("status", "unknown")
-                    status_emoji = get_status_emoji(status)
-                    image = c.get("image", "unknown")
-                    # Shorten image name if it's too long
-                    if len(image) > 30:
-                        image = image[:27] + "..."
-                        
-                    lines.append(f"        {c_node_id}[\"📦 {c_name}<br/>{status_emoji} {status}<br/><sub>{image}</sub>\"]")
-                    
-                    # Apply styling class
-                    c_class = classify_container(c_name, image, status)
-                    lines.append(f"        class {c_node_id} {c_class};")
-                        
-                    defined_containers[c_name] = c_node_id
-                
-                # Connect container to network hub within the subgraph
-                lines.append(f"        {c_node_id} --- {hub_id}")
-                
-        lines.append("    end")
-        lines.append("")
-
-    # Handle containers that were not placed in any active network subgraph
-    # (either they have no networks, or all their networks were excluded)
-    standalone_containers = [c for c in active_containers if c.get("name") not in defined_containers]
-    if standalone_containers:
-        lines.append("    subgraph SUB_standalone[\"📦 Standalone Containers\"]")
-        lines.append("        direction TB")
-        for c in standalone_containers:
-            c_name = c.get("name")
-            c_node_id = sanitize_id(f"container_{c_name}")
-            status = c.get("status", "unknown")
-            status_emoji = get_status_emoji(status)
-            image = c.get("image", "unknown")
-            if len(image) > 30:
-                image = image[:27] + "..."
-                
-            lines.append(f"        {c_node_id}[\"📦 {c_name}<br/>{status_emoji} {status}<br/><sub>{image}</sub>\"]")
-            c_class = classify_container(c_name, image, status)
-            lines.append(f"        class {c_node_id} {c_class};")
-            defined_containers[c_name] = c_node_id
-        lines.append("    end")
-        lines.append("")
-
-    # 3. Connections between Networks and Containers (for multi-homed containers)
-    # If container is connected to networks other than its "owner" network, draw links
-    for c in active_containers:
-        c_name = c.get("name")
-        c_node_id = defined_containers.get(c_name)
-        if not c_node_id:
-            continue
-            
-        c_nets = c.get("networks", [])
-        if len(c_nets) > 1:
-            # We already connected to the first one inside the subgraph.
-            # Connect to other networks' hubs
-            for net_name in c_nets[1:]:
-                hub_id = network_hub_nodes.get(net_name)
-                # Only connect if the network wasn't excluded
-                if hub_id:
-                    lines.append(f"    {c_node_id} --- {hub_id}")
-
-    # 4. Connections between Host Ports and Containers (Port Mappings)
-    for port, bindings in unique_host_ports.items():
-        port_node_id = port_nodes.get(port)
-        if not port_node_id:
-            continue
-            
+        # Connect port node to containers
         for binding in bindings:
             c_name = binding["container_name"]
-            c_node_id = defined_containers.get(c_name)
             c_port = binding["container_port"]
             
-            if c_node_id:
-                lines.append(f"    {port_node_id} -->|\"{c_port}\"| {c_node_id}")
+            if c_name in defined_containers:
+                edges.append({
+                    "from": port_node_id,
+                    "to": f"container_{c_name}",
+                    "label": c_port,
+                    "font": {"align": "top", "size": 11, "color": "#cbd5e1", "strokeWidth": 0},
+                    "color": {"color": "#64748b", "highlight": "#6366f1"},
+                    "arrows": {"to": {"enabled": true, "scaleFactor": 0.8}}
+                })
 
-    # 5. Internal Exposed Ports (if not hidden)
-    if not hide_internal_ports:
-        for c in active_containers:
-            c_name = c.get("name")
-            c_node_id = defined_containers.get(c_name)
-            if not c_node_id:
-                continue
-                
-            for p in c.get("ports", []):
-                host_port = p.get("host_port")
-                container_port = p.get("container_port")
-                # If it's exposed but not mapped to a host port
-                if container_port and not host_port:
-                    # Create an internal port node near the container
-                    port_clean = container_port.replace("/", "_")
-                    internal_port_id = sanitize_id(f"int_{c_name}_{port_clean}")
-                    lines.append(f"    {internal_port_id}[\"🔒 Exposed: {container_port}\"]")
-                    lines.append(f"    {c_node_id} --- {internal_port_id}")
-
-    return "\n".join(lines)
+    return {
+        "nodes": nodes,
+        "edges": edges
+    }

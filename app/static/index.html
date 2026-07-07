@@ -5,7 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Docker Live Visualizer</title>
   <link rel="stylesheet" href="style.css">
-  <!-- Load Mermaid ESM module later dynamically in app.js -->
+  <!-- Load Vis.js Network Standalone from unpkg CDN -->
+  <script type="text/javascript" src="https://unpkg.com/vis-network/standalone/umd/vis-network.min.js"></script>
 </head>
 <body>
 
@@ -68,12 +69,11 @@
           <h3>Layout</h3>
           <div class="control-group">
             <div class="control-row">
-              <label for="layout-direction">Direction</label>
+              <label for="layout-direction">Layout Mode</label>
               <select id="layout-direction">
-                <option value="TD" selected>Top-Down (TD)</option>
-                <option value="LR">Left-Right (LR)</option>
-                <option value="BT">Bottom-Top (BT)</option>
-                <option value="RL">Right-Left (RL)</option>
+                <option value="physics" selected>Physics / Cluster</option>
+                <option value="UD">Hierarchical Up-Down</option>
+                <option value="LR">Hierarchical Left-Right</option>
               </select>
             </div>
           </div>
@@ -140,12 +140,13 @@
           </svg>
           Refresh Now
         </button>
-        <button id="view-code-btn" class="btn btn-secondary">
+        <button id="export-png-btn" class="btn btn-secondary">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="16 18 22 12 16 6"></polyline>
-            <polyline points="8 6 2 12 8 18"></polyline>
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
           </svg>
-          View Mermaid Code
+          Export as PNG
         </button>
         <button id="api-key-btn" class="btn btn-secondary">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -180,12 +181,10 @@
       </div>
 
       <!-- Main Canvas for Diagram -->
+      <!-- Main Canvas for Vis.js Diagram -->
       <div id="diagram-container">
-        <div id="diagram-wrapper">
-          <!-- Rendered SVG will go here -->
-          <div style="text-align: center; color: var(--text-secondary);">
-            <p>Initializing visualizer...</p>
-          </div>
+        <div style="text-align: center; color: var(--text-secondary); width: 100%;">
+          <p>Initializing visualizer...</p>
         </div>
       </div>
 
@@ -196,26 +195,7 @@
     </main>
   </div>
 
-  <!-- Code Modal -->
-  <div id="code-modal" class="modal">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h2>Mermaid.js Flowchart Source</h2>
-        <button class="modal-close">&times;</button>
-      </div>
-      <div class="modal-body">
-        <p class="text-secondary" style="font-size: 0.875rem; margin-bottom: 0.5rem;">Copy this string into any Mermaid reader (e.g. mermaid.live) to render outside this app.</p>
-        <textarea id="code-output" readonly></textarea>
-        <button id="copy-code-btn" class="btn btn-primary" style="margin-top: 0.5rem;">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
-            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-          </svg>
-          Copy to Clipboard
-        </button>
-      </div>
-    </div>
-  </div>
+  <!-- Code Modal Removed (Now using direct PNG export) -->
 
   <!-- API Key Modal -->
   <div id="api-key-modal" class="modal">

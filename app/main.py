@@ -66,17 +66,20 @@ def get_diagram(
     }
 
     try:
-        mermaid_code = generate_mermaid(docker_data, network_data, filters)
+        topology_data = generate_mermaid(docker_data, network_data, filters)
     except Exception as e:
-        logger.exception("Error generating Mermaid diagram")
-        mermaid_code = f"flowchart TD\n    error[\"❌ Error generating diagram: {e}\"]"
+        logger.exception("Error generating topology data")
+        topology_data = {
+            "nodes": [{"id": "error", "label": f"❌ Error generating diagram:\n{e}", "group": "stopped"}],
+            "edges": []
+        }
 
     # Extract all network names and interface names to let the frontend build filters
     all_networks = [net.get("name") for net in docker_data.get("networks", []) if net.get("name")]
     all_interfaces = [iface.get("name") for iface in network_data.get("interfaces", []) if iface.get("name")]
 
     return {
-        "mermaid": mermaid_code,
+        "topology": topology_data,
         "docker_error": docker_data.get("error"),
         "network_error": network_data.get("error"),
         "networks": sorted(list(set(all_networks))),

@@ -1,39 +1,25 @@
-// Import Mermaid from CDN
-import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
-
-// Initialize Mermaid with dark theme
-mermaid.initialize({
-  startOnLoad: false,
-  theme: 'dark',
-  securityLevel: 'loose',
-  flowchart: {
-    useWidth: false,
-    htmlLabels: true
-  }
-});
-
-// App State
+// Vis.js Network Live Visualizer Implementation
+// State
 const state = {
   apiKey: localStorage.getItem('api_key') || '',
   autoRefresh: true,
   refreshInterval: 5,
-  layoutDirection: 'TD',
+  layoutMode: 'physics', // 'physics', 'UD' (Up-Down), 'LR' (Left-Right)
   excludeStopped: false,
   hideInternalPorts: false,
   hideLoopback: true,
   hideVeth: true,
   hideBridge: true,
   excludeNetworks: new Set(),
-  zoom: 1.0,
-  panX: 0,
-  panY: 0,
-  lastMermaidCode: '',
-  isDragging: false,
-  startX: 0,
-  startY: 0,
-  refreshTimer: null,
-  isFirstLoad: true
+  appTitle: 'Docker Live Visualizer',
+  isFirstLoad: true,
+  refreshTimer: null
 };
+
+// Global Vis.js DataSet & Network Instances
+let nodesDataSet = new vis.DataSet();
+let edgesDataSet = new vis.DataSet();
+let networkInstance = null;
 
 // DOM Elements
 const elements = {
@@ -51,21 +37,17 @@ const elements = {
   filterBridge: document.getElementById('filter-bridge'),
   networksList: document.getElementById('networks-list'),
   refreshBtn: document.getElementById('refresh-btn'),
-  viewCodeBtn: document.getElementById('view-code-btn'),
+  exportPngBtn: document.getElementById('export-png-btn'),
   apiKeyBtn: document.getElementById('api-key-btn'),
   zoomIn: document.getElementById('zoom-in'),
   zoomOut: document.getElementById('zoom-out'),
   zoomReset: document.getElementById('zoom-reset'),
   diagramContainer: document.getElementById('diagram-container'),
-  diagramWrapper: document.getElementById('diagram-wrapper'),
   loading: document.getElementById('loading'),
   sidebar: document.getElementById('sidebar'),
   menuBtn: document.getElementById('menu-btn'),
   
   // Modals
-  codeModal: document.getElementById('code-modal'),
-  codeOutput: document.getElementById('code-output'),
-  copyCodeBtn: document.getElementById('copy-code-btn'),
   apiKeyModal: document.getElementById('api-key-modal'),
   apiKeyInput: document.getElementById('api-key-input'),
   saveApiKey: document.getElementById('save-api-key')
@@ -87,7 +69,7 @@ function loadSavedSettings() {
       const config = JSON.parse(saved);
       state.autoRefresh = config.autoRefresh !== undefined ? config.autoRefresh : true;
       state.refreshInterval = config.refreshInterval || 5;
-      state.layoutDirection = config.layoutDirection || 'TD';
+      state.layoutMode = config.layoutMode || 'physics';
       state.excludeStopped = !!config.excludeStopped;
       state.hideInternalPorts = !!config.hideInternalPorts;
       state.hideLoopback = config.hideLoopback !== undefined ? config.hideLoopback : true;
@@ -103,7 +85,7 @@ function loadSavedSettings() {
   elements.autoRefresh.checked = state.autoRefresh;
   elements.refreshInterval.value = state.refreshInterval;
   elements.intervalVal.textContent = `${state.refreshInterval}s`;
-  elements.layoutDirection.value = state.layoutDirection;
+  elements.layoutDirection.value = state.layoutMode;
   elements.filterStopped.checked = state.excludeStopped;
   elements.filterInternal.checked = state.hideInternalPorts;
   elements.filterLoopback.checked = state.hideLoopback;
@@ -116,7 +98,7 @@ function saveSettings() {
   const config = {
     autoRefresh: state.autoRefresh,
     refreshInterval: state.refreshInterval,
-    layoutDirection: state.layoutDirection,
+    layoutMode: state.layoutMode,
     excludeStopped: state.excludeStopped,
     hideInternalPorts: state.hideInternalPorts,
     hideLoopback: state.hideLoopback,
@@ -147,9 +129,13 @@ function setupEventListeners() {
   });
 
   elements.layoutDirection.addEventListener('change', (e) => {
-    state.layoutDirection = e.target.value;
+    state.layoutMode = e.target.value;
     saveSettings();
-    fetchData();
+    
+    // Dynamically update layout options
+    if (networkInstance) {
+      updateNetworkLayoutMode();
+    }
   });
 
   const toggleFilters = [
@@ -177,10 +163,7 @@ function setupEventListeners() {
   });
 
   // Modals management
-  elements.viewCodeBtn.addEventListener('click', () => {
-    elements.codeOutput.value = state.lastMermaidCode;
-    openModal(elements.codeModal);
-  });
+  elements.exportPngBtn.addEventListener('click', exportPNG);
 
   elements.apiKeyBtn.addEventListener('click', () => {
     elements.apiKeyInput.value = state.apiKey;
@@ -206,28 +189,24 @@ function setupEventListeners() {
     });
   });
 
-  // Copy Code
-  elements.copyCodeBtn.addEventListener('click', () => {
-    elements.codeOutput.select();
-    navigator.clipboard.writeText(elements.codeOutput.value)
-      .then(() => {
-        const originalText = elements.copyCodeBtn.innerHTML;
-        elements.copyCodeBtn.innerHTML = '✓ Copied!';
-        elements.copyCodeBtn.style.backgroundColor = 'var(--success-color)';
-        setTimeout(() => {
-          elements.copyCodeBtn.innerHTML = originalText;
-          elements.copyCodeBtn.style.backgroundColor = '';
-        }, 2000);
-      })
-      .catch(err => console.error('Failed to copy text: ', err));
+  // Viewport zoom buttons hooked up to Vis.js
+  elements.zoomIn.addEventListener('click', () => {
+    if (networkInstance) {
+      networkInstance.moveTo({ scale: networkInstance.getScale() * 1.3, animation: true });
+    }
   });
 
-  // Viewport Zoom & Drag & Pan
-  elements.zoomIn.addEventListener('click', () => zoomAtCenter(1.25));
-  elements.zoomOut.addEventListener('click', () => zoomAtCenter(0.8));
-  elements.zoomReset.addEventListener('click', resetViewport);
-  
-  setupDragAndPan();
+  elements.zoomOut.addEventListener('click', () => {
+    if (networkInstance) {
+      networkInstance.moveTo({ scale: networkInstance.getScale() * 0.75, animation: true });
+    }
+  });
+
+  elements.zoomReset.addEventListener('click', () => {
+    if (networkInstance) {
+      networkInstance.fit({ animation: true });
+    }
+  });
 }
 
 // Open/Close Modals
@@ -239,120 +218,190 @@ function closeModal(modal) {
   modal.classList.remove('active');
 }
 
-// Zoom functionality at a specific coordinate (pins that point)
-function zoomAtPoint(factor, clientX, clientY) {
-  const oldZoom = state.zoom;
-  const newZoom = Math.max(0.02, Math.min(25.0, oldZoom * factor)); // Allow 0.02x to 25.0x zoom!
-  
-  // Calculate new pan to keep coordinate under pointer pinned on screen
-  state.panX = clientX - (clientX - state.panX) * (newZoom / oldZoom);
-  state.panY = clientY - (clientY - state.panY) * (newZoom / oldZoom);
-  state.zoom = newZoom;
-  
-  applyViewportTransform();
-}
-
-// Zoom functionality relative to center of viewport
-function zoomAtCenter(factor) {
-  const container = elements.diagramContainer;
-  const rect = container.getBoundingClientRect();
-  const centerX = rect.width / 2;
-  const centerY = rect.height / 2;
-  zoomAtPoint(factor, centerX, centerY);
-}
-
-function resetViewport() {
-  const container = elements.diagramContainer;
-  const wrapper = elements.diagramWrapper;
-  
-  const containerRect = container.getBoundingClientRect();
-  
-  const svg = wrapper.querySelector('svg');
-  let wWidth = wrapper.offsetWidth;
-  let wHeight = wrapper.offsetHeight;
-  
-  if (svg) {
-    const viewBox = svg.viewBox.baseVal;
-    if (viewBox && viewBox.width > 0) {
-      wWidth = viewBox.width;
-      wHeight = viewBox.height;
+// Get Vis.js Options matching app styling
+function getNetworkOptions() {
+  return {
+    nodes: {
+      shape: 'box',
+      margin: 12,
+      font: {
+        color: '#f8fafc',
+        size: 13,
+        face: 'Inter, system-ui, sans-serif',
+      },
+      borderWidth: 2,
+      shadow: {
+        enabled: true,
+        color: 'rgba(0, 0, 0, 0.4)',
+        size: 6,
+        x: 0,
+        y: 4
+      }
+    },
+    edges: {
+      width: 2,
+      selectionWidth: 3,
+      hoverWidth: 3,
+      color: {
+        color: '#475569',
+        highlight: '#06b6d4',
+        hover: '#06b6d4'
+      },
+      smooth: {
+        enabled: true,
+        type: 'continuous',
+        roundness: 0.5
+      }
+    },
+    groups: {
+      physical: {
+        shape: 'box',
+        color: {
+          background: '#0f172a',
+          border: '#3b82f6',
+          highlight: { background: '#1e293b', border: '#60a5fa' }
+        }
+      },
+      vpn: {
+        shape: 'box',
+        color: {
+          background: '#0f172a',
+          border: '#8b5cf6',
+          highlight: { background: '#1e293b', border: '#a78bfa' }
+        }
+      },
+      hostport: {
+        shape: 'box',
+        borderWidth: 1.5,
+        color: {
+          background: '#1e293b',
+          border: '#cbd5e1',
+          highlight: { background: '#334155', border: '#f8fafc' }
+        }
+      },
+      network: {
+        shape: 'database',
+        color: {
+          background: '#111827',
+          border: '#06b6d4',
+          highlight: { background: '#1f2937', border: '#22d3ee' }
+        }
+      },
+      running: {
+        shape: 'box',
+        color: {
+          background: '#10b9810d',
+          border: '#10b981',
+          highlight: { background: '#10b98126', border: '#34d399' }
+        }
+      },
+      db: {
+        shape: 'box',
+        color: {
+          background: '#a855f70d',
+          border: '#a855f7',
+          highlight: { background: '#a855f726', border: '#c084fc' }
+        }
+      },
+      web: {
+        shape: 'box',
+        color: {
+          background: '#0ea5e90d',
+          border: '#0ea5e9',
+          highlight: { background: '#0ea5e926', border: '#38bdf8' }
+        }
+      },
+      tool: {
+        shape: 'box',
+        color: {
+          background: '#eab3080d',
+          border: '#eab308',
+          highlight: { background: '#eab30826', border: '#facc15' }
+        }
+      },
+      app: {
+        shape: 'box',
+        color: {
+          background: '#ec48990d',
+          border: '#ec4899',
+          highlight: { background: '#ec489926', border: '#f472b6' }
+        }
+      },
+      stopped: {
+        shape: 'box',
+        color: {
+          background: '#ef44440d',
+          border: '#ef4444',
+          highlight: { background: '#ef444426', border: '#f87171' }
+        }
+      },
+      paused: {
+        shape: 'box',
+        color: {
+          background: '#f59e0b0d',
+          border: '#f59e0b',
+          highlight: { background: '#f59e0b26', border: '#fbbf24' }
+        }
+      }
+    },
+    physics: {
+      solver: 'forceAtlas2Based',
+      forceAtlas2Based: {
+        gravitationalConstant: -120,
+        centralGravity: 0.015,
+        springLength: 140,
+        springConstant: 0.08,
+        damping: 0.4,
+        avoidOverlap: 1.0
+      },
+      stabilization: {
+        enabled: true,
+        iterations: 200,
+        updateInterval: 50
+      }
+    },
+    interaction: {
+      hover: true,
+      hoverConnectedEdges: true,
+      tooltipDelay: 150,
+      zoomView: true,
+      dragView: true,
+      dragNodes: true
     }
+  };
+}
+
+// Update Network Layout Options dynamically
+function updateNetworkLayoutMode() {
+  const isHierarchical = state.layoutMode !== 'physics';
+  
+  if (isHierarchical) {
+    networkInstance.setOptions({
+      physics: { enabled: false },
+      layout: {
+        hierarchical: {
+          enabled: true,
+          direction: state.layoutMode, // 'UD' or 'LR'
+          sortMethod: 'directed',
+          nodeSpacing: 160,
+          treeSpacing: 220,
+          edgeMinimization: true,
+          parentCentralization: true
+        }
+      }
+    });
+  } else {
+    // Standard Physics
+    networkInstance.setOptions({
+      layout: { hierarchical: { enabled: false } },
+      physics: { enabled: true }
+    });
+    // Stabilize/re-run physics layout
+    networkInstance.stabilize();
   }
-  
-  if (!wWidth || wWidth < 10) wWidth = 800;
-  if (!wHeight || wHeight < 10) wHeight = 600;
-  
-  // Fit diagram to screen on reset
-  const margin = 60;
-  const zoomX = (containerRect.width - margin) / wWidth;
-  const zoomY = (containerRect.height - margin) / wHeight;
-  
-  state.zoom = Math.min(1.0, Math.min(zoomX, zoomY));
-  if (state.zoom < 0.02) state.zoom = 0.02;
-  
-  // Centering pan values
-  state.panX = (containerRect.width - wWidth * state.zoom) / 2;
-  state.panY = (containerRect.height - wHeight * state.zoom) / 2;
-  
-  applyViewportTransform();
 }
 
-function applyViewportTransform() {
-  elements.diagramWrapper.style.transform = `translate(${state.panX}px, ${state.panY}px) scale(${state.zoom})`;
-}
-
-// Drag & Pan implementation
-function setupDragAndPan() {
-  const container = elements.diagramContainer;
-  
-  container.addEventListener('mousedown', (e) => {
-    if (e.button !== 0) return;
-    if (e.target.closest('button') || e.target.closest('a')) return;
-    
-    state.isDragging = true;
-    state.startX = e.clientX - state.panX;
-    state.startY = e.clientY - state.panY;
-    container.style.cursor = 'grabbing';
-    e.preventDefault();
-  });
-
-  window.addEventListener('mousemove', (e) => {
-    if (!state.isDragging) return;
-    state.panX = e.clientX - state.startX;
-    state.panY = e.clientY - state.startY;
-    applyViewportTransform();
-  });
-
-  window.addEventListener('mouseup', () => {
-    if (state.isDragging) {
-      state.isDragging = false;
-      container.style.cursor = 'grab';
-    }
-  });
-
-  // Trackpad scroll (two-finger pan) and pinch (zoom)
-  container.addEventListener('wheel', (e) => {
-    e.preventDefault();
-    
-    const rect = container.getBoundingClientRect();
-    const localX = e.clientX - rect.left;
-    const localY = e.clientY - rect.top;
-    
-    if (e.ctrlKey) {
-      // Touchpad pinch-to-zoom or Ctrl+Scroll wheel
-      // Uses a smooth exponential multiplier to match pinch speed
-      const zoomFactor = Math.exp(-e.deltaY * 0.006);
-      zoomAtPoint(zoomFactor, localX, localY);
-    } else {
-      // Trackpad two-finger swipe or standard mouse wheel scroll (pans diagram instantly)
-      state.panX -= e.deltaX * 1.1;
-      state.panY -= e.deltaY * 1.1;
-      applyViewportTransform();
-    }
-  }, { passive: false });
-}
-
-// Fetch API data
+// Fetch API data and update diagram
 async function fetchData(manual = false) {
   showLoading(true);
   
@@ -366,7 +415,6 @@ async function fetchData(manual = false) {
   params.append('hide_loopback', state.hideLoopback);
   params.append('hide_veth', state.hideVeth);
   params.append('hide_bridge', state.hideBridge);
-  params.append('direction', state.layoutDirection);
 
   const url = `/api/diagram?${params.toString()}`;
   const headers = {};
@@ -380,7 +428,6 @@ async function fetchData(manual = false) {
     if (res.status === 401 || res.status === 403) {
       showStatus(false, 'Unauthorized / Invalid Key');
       showLoading(false);
-      // Trigger API Key modal if authentication error occurs
       openModal(elements.apiKeyModal);
       return;
     }
@@ -391,8 +438,9 @@ async function fetchData(manual = false) {
 
     const data = await res.json();
     
-    // Update title
-    elements.appTitle.textContent = data.app_title || 'Docker Live Visualizer';
+    // Update Title
+    state.appTitle = data.app_title || 'Docker Live Visualizer';
+    elements.appTitle.textContent = state.appTitle;
     
     // Check for scanner errors
     if (data.docker_error) {
@@ -401,81 +449,86 @@ async function fetchData(manual = false) {
       showStatus(true, 'Live Connected');
     }
 
-    state.lastMermaidCode = data.mermaid;
-    
-    // Update networks filter list
+    // Update Networks Checklist
     updateNetworksChecklist(data.networks || []);
     
-    // Render the new diagram
-    await renderDiagram(data.mermaid);
-    
-    if (state.isFirstLoad) {
-      // Small timeout to allow DOM dimensions to calculate
-      setTimeout(() => {
-        resetViewport();
-        state.isFirstLoad = false;
-      }, 80);
-    }
+    // Render/Update Vis.js Network
+    renderNetwork(data.topology || { nodes: [], edges: [] });
     
   } catch (err) {
     console.error('Fetch failed:', err);
     showStatus(false, 'Connection Failed');
-    renderErrorDiagram(err.message);
   } finally {
     showLoading(false);
   }
 }
 
-// Render Mermaid Diagram to DOM
-async function renderDiagram(mermaidCode) {
-  try {
-    // Clear previous temporary rendering divs if any
-    const tempDiv = document.createElement('div');
-    tempDiv.id = 'mermaid-temp';
-    document.body.appendChild(tempDiv);
+// Render or smooth update the Vis.js Network
+function renderNetwork(topology) {
+  const container = elements.diagramContainer;
+  
+  // 1. If networkInstance is null, initialize it for the first time
+  if (!networkInstance) {
+    // Clear the container first
+    container.innerHTML = '';
     
-    // Render code to SVG string
-    const { svg } = await mermaid.render('mermaid-rendered-svg', mermaidCode);
+    // Feed data to dataset
+    nodesDataSet.clear();
+    edgesDataSet.clear();
+    nodesDataSet.add(topology.nodes);
+    edgesDataSet.add(topology.edges);
     
-    // Clean up temporary div
-    tempDiv.remove();
+    const data = {
+      nodes: nodesDataSet,
+      edges: edgesDataSet
+    };
     
-    // Set SVG to wrapper
-    elements.diagramWrapper.innerHTML = svg;
+    const options = getNetworkOptions();
     
-    // Trigger viewport transform alignment in case size changed
-    applyViewportTransform();
-  } catch (err) {
-    console.error('Mermaid render failed:', err);
-    // If mermaid rendering throws syntax error, show in DOM
-    renderErrorDiagram('Mermaid Syntax/Rendering Failure');
-    // Clear error cache
-    const badSvg = document.getElementById('mermaid-rendered-svg');
-    if (badSvg) badSvg.remove();
-    const badTemp = document.getElementById('mermaid-temp');
-    if (badTemp) badTemp.remove();
+    networkInstance = new vis.Network(container, data, options);
+    
+    // Align current layout mode selection
+    updateNetworkLayoutMode();
+    
+    // Auto-fit on first load
+    networkInstance.once('stabilizationIterationsDone', () => {
+      networkInstance.fit();
+    });
+    
+    state.isFirstLoad = false;
+  } else {
+    // 2. Smooth Update: compare old and new nodes/edges to prevent visual jumpiness
+    const currentNodes = nodesDataSet.getIds();
+    const currentEdges = edgesDataSet.getIds();
+    
+    const newNodes = topology.nodes;
+    const newEdges = topology.edges;
+    
+    const newNodesIds = newNodes.map(n => n.id);
+    const newEdgesIds = newEdges.map(e => e.id);
+    
+    // Remove obsolete nodes and edges
+    const nodesToRemove = currentNodes.filter(id => !newNodesIds.includes(id));
+    const edgesToRemove = currentEdges.filter(id => !newEdgesIds.includes(id));
+    
+    if (nodesToRemove.length > 0) nodesDataSet.remove(nodesToRemove);
+    if (edgesToRemove.length > 0) edgesDataSet.remove(edgesToRemove);
+    
+    // Add or update nodes and edges
+    nodesDataSet.update(newNodes);
+    edgesDataSet.update(newEdges);
+    
+    // If it's still first load (e.g. data arrived slowly), fit it
+    if (state.isFirstLoad) {
+      networkInstance.fit();
+      state.isFirstLoad = false;
+    }
   }
-}
-
-function renderErrorDiagram(message) {
-  elements.diagramWrapper.innerHTML = `
-    <div style="text-align: center; color: var(--danger-color); padding: 2rem; border: 1px dashed var(--danger-color); border-radius: 8px; background: rgba(239, 68, 68, 0.05);">
-      <svg width="48" height="48" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24" style="margin-bottom: 1rem;">
-        <circle cx="12" cy="12" r="10"></circle>
-        <line x1="12" y1="8" x2="12" y2="12"></line>
-        <line x1="12" y1="16" x2="12.01" y2="16"></line>
-      </svg>
-      <h3 style="margin-bottom: 0.5rem; font-weight: 600;">Failed to Load Infrastructure</h3>
-      <p style="font-size: 0.875rem; color: var(--text-secondary);">${message}</p>
-    </div>
-  `;
 }
 
 // Build checklist of Docker Networks dynamically
 function updateNetworksChecklist(networks) {
-  // Save selected state
   const currentSelections = new Set(state.excludeNetworks);
-  
   elements.networksList.innerHTML = '';
   
   if (networks.length === 0) {
@@ -506,6 +559,36 @@ function updateNetworksChecklist(networks) {
     label.appendChild(document.createTextNode(net));
     elements.networksList.appendChild(label);
   });
+}
+
+// Export canvas topology as a PNG image with a dark background
+function exportPNG() {
+  const canvas = elements.diagramContainer.querySelector('canvas');
+  if (!canvas) {
+    alert('No topology canvas available to export!');
+    return;
+  }
+  
+  // Create virtual canvas to render background color + diagram
+  const tempCanvas = document.createElement('canvas');
+  tempCanvas.width = canvas.width;
+  tempCanvas.height = canvas.height;
+  
+  const ctx = tempCanvas.getContext('2d');
+  
+  // App primary background (dark theme dark blue)
+  ctx.fillStyle = '#0b0f19';
+  ctx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+  
+  // Render the Vis.js canvas over it
+  ctx.drawImage(canvas, 0, 0);
+  
+  // Download trigger
+  const image = tempCanvas.toDataURL("image/png");
+  const link = document.createElement('a');
+  link.download = `${state.appTitle.replace(/\s+/g, '_')}_topology.png`;
+  link.href = image;
+  link.click();
 }
 
 // Control Auto-Refresh timers
