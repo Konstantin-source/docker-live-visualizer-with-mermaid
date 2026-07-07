@@ -31,7 +31,8 @@ const state = {
   isDragging: false,
   startX: 0,
   startY: 0,
-  refreshTimer: null
+  refreshTimer: null,
+  isFirstLoad: true
 };
 
 // DOM Elements
@@ -222,8 +223,8 @@ function setupEventListeners() {
   });
 
   // Viewport Zoom & Drag & Pan
-  elements.zoomIn.addEventListener('click', () => zoom(0.1));
-  elements.zoomOut.addEventListener('click', () => zoom(-0.1));
+  elements.zoomIn.addEventListener('click', () => zoomAtCenter(1.25));
+  elements.zoomOut.addEventListener('click', () => zoomAtCenter(0.8));
   elements.zoomReset.addEventListener('click', resetViewport);
   
   setupDragAndPan();
@@ -238,17 +239,61 @@ function closeModal(modal) {
   modal.classList.remove('active');
 }
 
-// Zoom functionality
-function zoom(delta) {
-  // Allow zooming from 0.1x to 10.0x for detailed views
-  state.zoom = Math.max(0.1, Math.min(10.0, state.zoom + delta));
+// Zoom functionality at a specific coordinate (pins that point)
+function zoomAtPoint(factor, clientX, clientY) {
+  const oldZoom = state.zoom;
+  const newZoom = Math.max(0.02, Math.min(25.0, oldZoom * factor)); // Allow 0.02x to 25.0x zoom!
+  
+  // Calculate new pan to keep coordinate under pointer pinned on screen
+  state.panX = clientX - (clientX - state.panX) * (newZoom / oldZoom);
+  state.panY = clientY - (clientY - state.panY) * (newZoom / oldZoom);
+  state.zoom = newZoom;
+  
   applyViewportTransform();
 }
 
+// Zoom functionality relative to center of viewport
+function zoomAtCenter(factor) {
+  const container = elements.diagramContainer;
+  const rect = container.getBoundingClientRect();
+  const centerX = rect.width / 2;
+  const centerY = rect.height / 2;
+  zoomAtPoint(factor, centerX, centerY);
+}
+
 function resetViewport() {
-  state.zoom = 1.0;
-  state.panX = 0;
-  state.panY = 0;
+  const container = elements.diagramContainer;
+  const wrapper = elements.diagramWrapper;
+  
+  const containerRect = container.getBoundingClientRect();
+  
+  const svg = wrapper.querySelector('svg');
+  let wWidth = wrapper.offsetWidth;
+  let wHeight = wrapper.offsetHeight;
+  
+  if (svg) {
+    const viewBox = svg.viewBox.baseVal;
+    if (viewBox && viewBox.width > 0) {
+      wWidth = viewBox.width;
+      wHeight = viewBox.height;
+    }
+  }
+  
+  if (!wWidth || wWidth < 10) wWidth = 800;
+  if (!wHeight || wHeight < 10) wHeight = 600;
+  
+  // Fit diagram to screen on reset
+  const margin = 60;
+  const zoomX = (containerRect.width - margin) / wWidth;
+  const zoomY = (containerRect.height - margin) / wHeight;
+  
+  state.zoom = Math.min(1.0, Math.min(zoomX, zoomY));
+  if (state.zoom < 0.02) state.zoom = 0.02;
+  
+  // Centering pan values
+  state.panX = (containerRect.width - wWidth * state.zoom) / 2;
+  state.panY = (containerRect.height - wHeight * state.zoom) / 2;
+  
   applyViewportTransform();
 }
 
@@ -261,10 +306,7 @@ function setupDragAndPan() {
   const container = elements.diagramContainer;
   
   container.addEventListener('mousedown', (e) => {
-    // Only drag with left click
     if (e.button !== 0) return;
-    
-    // Ignore clicks on SVG buttons or interactable nodes if they exist
     if (e.target.closest('button') || e.target.closest('a')) return;
     
     state.isDragging = true;
@@ -288,18 +330,23 @@ function setupDragAndPan() {
     }
   });
 
-  // Smart wheel handling: touchpad pinch-to-zoom vs scroll panning
+  // Trackpad scroll (two-finger pan) and pinch (zoom)
   container.addEventListener('wheel', (e) => {
     e.preventDefault();
+    
+    const rect = container.getBoundingClientRect();
+    const localX = e.clientX - rect.left;
+    const localY = e.clientY - rect.top;
+    
     if (e.ctrlKey) {
-      // Touchpad pinch-to-zoom or Ctrl + Scroll wheel
-      // Negative deltaY is zoom-in, positive is zoom-out
-      const zoomFactor = -e.deltaY * 0.015;
-      zoom(zoomFactor);
+      // Touchpad pinch-to-zoom or Ctrl+Scroll wheel
+      // Uses a smooth exponential multiplier to match pinch speed
+      const zoomFactor = Math.exp(-e.deltaY * 0.006);
+      zoomAtPoint(zoomFactor, localX, localY);
     } else {
-      // Touchpad two-finger scroll or normal mouse wheel scroll (pans viewport)
-      state.panX -= e.deltaX * 1.0;
-      state.panY -= e.deltaY * 1.0;
+      // Trackpad two-finger swipe or standard mouse wheel scroll (pans diagram instantly)
+      state.panX -= e.deltaX * 1.1;
+      state.panY -= e.deltaY * 1.1;
       applyViewportTransform();
     }
   }, { passive: false });
@@ -361,6 +408,14 @@ async function fetchData(manual = false) {
     
     // Render the new diagram
     await renderDiagram(data.mermaid);
+    
+    if (state.isFirstLoad) {
+      // Small timeout to allow DOM dimensions to calculate
+      setTimeout(() => {
+        resetViewport();
+        state.isFirstLoad = false;
+      }, 80);
+    }
     
   } catch (err) {
     console.error('Fetch failed:', err);

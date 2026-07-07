@@ -440,8 +440,7 @@ main {
 }
 
 #diagram-wrapper {
-  transform-origin: center center;
-  transition: transform 0.15s ease-out;
+  transform-origin: 0 0;
   display: inline-block;
 }
 
